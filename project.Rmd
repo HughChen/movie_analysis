@@ -1,0 +1,350 @@
+---
+title: "Project Code"
+author: "Hugh Chen"
+date: "3/14/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data intro
+```{r}
+library(hexbin)
+mdata = read.csv("movie_rt_transform.csv")
+head(mdata)
+```
+
+## Exploratory analysis
+```{r}
+hist(mdata$gross, main="Histogram of Gross", xlab="Gross")
+hist(mdata$budget, main="Histogram of Budget", xlab="Budget")
+hist(mdata$imdb_score, main="Histogram of IMDB Scores", xlab="IMDB Score")
+hist(mdata$rt_score, main="Histogram of Rotten Tomato Scores", xlab="Rotten Tomato Score")
+
+t_rt_score = qnorm((mdata$rt_score+0.5)/101,0)
+hist(t_rt_score)
+
+plot(hexbin(mdata$gross, mdata$budget), main="Gross vs. Budget" , legend=0, xlab="Gross (USD)", ylab="Budget (USD)")
+plot(hexbin(mdata$imdb_score, mdata$rt_score), main="IMDB Score vs. RT Score" , legend=0, xlab="IMDB Score", ylab="RT Score")
+plot(hexbin(log(mdata$gross), log(mdata$budget)), main="Gross vs. Budget" , legend=0, xlab="log gross", ylab="log budget")
+```
+
+## Univariate summaries
+```{r}
+mdata3 = mdata
+mdata3$norm_gross = mdata$gross/max(mdata$gross)
+mdata3$norm_budget = mdata$budget/max(mdata$budget)
+mdata3$norm_imdb_score = mdata$imdb_score/max(mdata$imdb_score)
+mdata3$norm_rt_score = mdata$rt_score/max(mdata$rt_score)
+boxplot(mdata3[,c(35, 36, 37, 38)], main="Univariate Summary")
+```
+
+## Pairwise scatter plots
+First the untransformed scatter plot.  
+```{r}
+mdata2 = mdata
+hexplom(~mdata2[,c(2,6,8,30)])
+```
+
+Then transform gross and profit by log transform.
+```{r}
+mdata2$log_gross = log(mdata2$gross)
+mdata2$log_budget = log(mdata2$budget)
+hexplom(~mdata2[,c(36,35,8,30)])
+```
+
+## Residuals for simple models
+```{r}
+model = lm(mdata$gross~mdata$budget+mdata$imdb_score+mdata$rt_score)
+summary(model)
+plot(model$fitted, model$resid, main="residual plot", xlab="Fitted", ylab="Residuals")
+
+model = lm(log(mdata$gross)~log(mdata$budget)+mdata$imdb_score+mdata$rt_score)
+summary(model)
+plot(model$fitted, model$resid, main="residual plot", xlab="Fitted", ylab="Residuals")
+```
+
+
+## Power Transform
+Try exact transformation.
+```{r}
+library(car)
+ans <- powerTransform(cbind(mdata$gross, mdata$budget, 
+                            mdata$imdb_score, mdata$rt_score+.01) ~ 1)
+powerTransform(cbind(mdata$gross, mdata$budget, 
+                     mdata$imdb_score, mdata$rt_score+.01) ~ 1)
+summary(ans)
+
+gross_trans = (mdata$gross^0.295 - 1)/0.295
+budget_trans = (mdata$budget^0.255 - 1)/0.255
+imdb_trans = (mdata$imdb_score^2.4 - 1)/2.4
+rt_trans = (mdata$rt_score^.79 - 1)/.79
+model = lm(gross_trans~budget_trans+imdb_trans+rt_trans)
+hexplom(~cbind(gross_trans,budget_trans,imdb_trans,rt_trans))
+summary(model)
+plot(model$fitted, model$resid, main="residual plot", xlab="Fitted", ylab="Residuals")
+```
+
+Try approximate.
+```{r}
+t_gross = (mdata$gross^0.25 - 1)/0.25
+t_budget = (mdata$budget^0.25 - 1)/0.25
+t_imdb_1 = mdata$imdb_score
+t_imdb_2 = (mdata$imdb_score^2 - 1)/2
+t_rt = mdata$rt_score
+model1 = lm(t_gross~t_budget+t_imdb_1+t_imdb_2+t_rt)
+hexplom(~cbind(t_gross,t_budget,t_imdb_2,t_rt))
+summary(model1)
+plot(model1$fitted, model1$resid, main="residual plot", xlab="Fitted", ylab="Residuals")
+```
+
+Normal transform of rotten tomatoes score.
+```{r}
+ans <- powerTransform(cbind(mdata$gross, mdata$budget, mdata$imdb_score, t_rt_score-min(t_rt_score)+.01) ~ 1)
+summary(ans)
+t_gross = (mdata$gross^0.25 - 1)/0.25
+t_budget = (mdata$budget^0.25 - 1)/0.25
+t_imdb_1 = mdata$imdb_score
+t_imdb_2 = (mdata$imdb_score^2 - 1)/2
+t_rt = t_rt_score
+model2 = lm(t_gross~t_budget+t_imdb_1+t_imdb_2+t_rt)
+hexplom(~cbind(t_gross,t_budget,t_imdb_2,t_rt))
+summary(model2)
+plot(hexbin(model2$fitted, model2$resid), main="Residual Plot", xlab="Fitted", ylab="Residuals", legend=0)
+
+par(mfrow=c(1,1))
+plot(hexbin(t_gross, t_budget), main="Gross vs. Budget" , legend=0, xlab="Transformed Gross", ylab="Transformed Budget")
+```
+
+## Initial regression
+```{r}
+rt=mdata
+genre_old=rt[,c(9:29)]
+Music= as.numeric(genre_old$Music | genre_old$Musical)
+genre=cbind(genre_old[,-c(13:14)],Music)
+
+data_initial=rt[,c(2,6,8,10:30)]
+data_initial=cbind(data_initial,as.factor(rt$title_year))
+lm1=lm(gross~.,data=data_initial)
+summary(lm1)
+```
+
+## Treat Genres
+### Transformation
+```{r}
+trans1=read.csv("movie_rt_transform.csv")
+continious_trans1=trans1[,-c(1:30)]
+continious_trans1=cbind(continious_trans1,continious_trans1$t_imdb_score^2,as.factor(rt$title_year))
+names(continious_trans1)[c(5,6)]=c("t_imdb_score2","year")
+```
+
+### Model selection
+```{r}
+library(corrplot)
+## cluster into 3 groups
+corrplot(cor(genre),order="hclust",addrect=3,method="color")
+c3_1=as.numeric(genre$Comedy|genre$Romance|genre$Fantasy|genre$Adventure|genre$Animation|genre$Family|genre$Documentary|genre$Music)  #8
+c3_2=as.numeric(genre$Sport|genre$War|genre$Biography|genre$History) #5
+c3_3=as.numeric(genre$Western|genre$Crime|genre$Thriller|genre$Action|genre$Sci.Fi|genre$Horror|genre$Mystery)   #7
+c3=cbind(c3_1,c3_2,c3_3)
+colSums(c3)
+
+## cluster into 4 groups
+corrplot(cor(genre),order="hclust",addrect=4,method="color")
+c4_1=as.numeric(genre$Comedy|genre$Romance)  #2
+c4_2=as.numeric(genre$Fantasy|genre$Adventure|genre$Animation|genre$Family|genre$Documentary|genre$Music) #6
+c4_3=as.numeric(genre$Sport|genre$War|genre$Biography|genre$History) #5
+c4_4=as.numeric(genre$Western|genre$Crime|genre$Thriller|genre$Action|genre$Sci.Fi|genre$Horror|genre$Mystery)   #7
+c4=cbind(c4_1,c4_2,c4_3,c4_4)
+
+## cluster into 5 groups
+corrplot(cor(genre),order="hclust",addrect=5,method="color")
+c5_1=as.numeric(genre$Comedy|genre$Romance)  #2
+c5_2=as.numeric(genre$Fantasy|genre$Adventure|genre$Animation|genre$Family|genre$Documentary|genre$Music) #6
+c5_3=as.numeric(genre$Sport|genre$War|genre$Biography|genre$History) #5
+c5_4=as.numeric(genre$Western|genre$Crime|genre$Thriller) #3
+c5_5=as.numeric(genre$Action|genre$Sci.Fi|genre$Horror|genre$Mystery)   #7
+c5=cbind(c5_1,c5_2,c5_3,c5_4,c5_5)
+
+## cluster into 6 groups
+corrplot(cor(genre),order="hclust",addrect=6,method="color")
+c6_1=as.numeric(genre$Comedy|genre$Romance)  #2
+c6_2=as.numeric(genre$Fantasy|genre$Adventure|genre$Animation|genre$Family|genre$Documentary|genre$Music) #6
+c6_3=as.numeric(genre$Sport|genre$War|genre$Biography|genre$History) #5
+c6_4=as.numeric(genre$Western|genre$Crime|genre$Thriller) #3
+c6_5=as.numeric(genre$Action|genre$Sci.Fi) #2
+c6_6=as.numeric(genre$Horror|genre$Mystery)   #2
+c6=cbind(c6_1,c6_2,c6_3,c6_4,c6_5,c6_6)
+
+## cluster into 7 groups
+corrplot(cor(genre),order="hclust",addrect=7,method="color")
+c7_1=as.numeric(genre$Comedy|genre$Romance)  #2
+c7_2=as.numeric(genre$Fantasy|genre$Adventure|genre$Animation|genre$Family) #6
+c7_3=as.numeric(genre$Sport|genre$War|genre$Biography|genre$History) #5
+c7_4=as.numeric(genre$Western|genre$Crime|genre$Thriller) #3
+c7_5=as.numeric(genre$Action|genre$Sci.Fi) #2
+c7_6=as.numeric(genre$Horror|genre$Mystery)   #2
+c7_7=as.numeric(genre$Documentary|genre$Music)
+c7=cbind(c7_1,c7_2,c7_3,c7_4,c7_5,c7_6,c7_7)
+
+data_c3=cbind(continious_trans1,c3,rt$title_year)
+lm_c3=lm(t_gross~.,data=as.data.frame(data_c3))
+s3=summary(lm_c3)
+plot(lm_c3$fitted.values,lm_c3$residuals)
+
+data_c4=cbind(continious_trans1,c4)
+lm_c4=lm(t_gross~.,data=as.data.frame(data_c4))
+s4=summary(lm_c4)
+
+data_c5=cbind(continious_trans1,c5)
+lm_c5=lm(t_gross~.,data=as.data.frame(data_c5))
+s5=summary(lm_c5)
+
+data_c6=cbind(continious_trans1,c6)
+lm_c6=lm(t_gross~.,data=as.data.frame(data_c6))
+s6=summary(lm_c6)
+
+data_c7=cbind(continious_trans1,c7)
+lm_c7=lm(t_gross~.,data=as.data.frame(data_c7))
+s7=summary(lm_c7)
+
+data_all=cbind(continious_trans1,genre_old)
+lm_all=lm(t_gross~.,data=as.data.frame(data_all))
+s_all=summary(lm_all)
+
+bic=BIC(lm_c3,lm_c4,lm_c5,lm_c6,lm_c7,lm_all)
+```
+BIC suggests c6
+
+
+## Diagnostics
+```{r, echo = FALSE}
+movie_rt_transform = mdata
+continious_trans1=movie_rt_transform[,-c(1:30)]
+continious_trans1=cbind(continious_trans1,continious_trans1$t_imdb_score^2,movie_rt_transform[,7])
+names(continious_trans1)[5]="t_imdb_score2"
+
+genre_old=movie_rt_transform[,c(9:29)]
+Music= as.numeric(genre_old$Music | genre_old$Musical)
+genre=cbind(genre_old[,-c(13:14)],Music)
+
+c6_1=as.numeric(genre$Comedy|genre$Romance)  #2
+c6_2=as.numeric(genre$Fantasy|genre$Adventure|genre$Animation|genre$Family|genre$Documentary|genre$Music) #6
+c6_3=as.numeric(genre$Sport|genre$War|genre$Biography|genre$History) #5
+c6_4=as.numeric(genre$Western|genre$Crime|genre$Thriller) #3
+c6_5=as.numeric(genre$Action|genre$Sci.Fi) #2
+c6_6=as.numeric(genre$Horror|genre$Mystery)   #2
+c6=cbind(c6_1,c6_2,c6_3,c6_4,c6_5,c6_6)
+
+data_c6=cbind(continious_trans1,c6)
+lm_c6=lm(t_gross~t_budget+t_imdb_score + t_rt_score +t_imdb_score2 + as.factor(movie_rt_transform[,7])+c6,data=as.data.frame(data_c6))
+```
+
+### Influential Points
+
+We calculated cook's distance for the model (shown as below). The maximum cook's distance is around 0.025, which is quite small.
+
+```{r, echo = FALSE}
+library(faraway)
+library(MASS)
+cook <- cooks.distance(lm_c6)
+halfnorm(cook,3,labs=movie_rt_transform$movie_title,ylab="Cooks distance")
+title(main="Half-Normal Q-Q plot for Cooks distances")
+```
+
+
+### Outliers
+
+The range for standardized residuals is:
+
+```{r, echo = FALSE}
+library(faraway)
+library(MASS)
+range(stdres(lm_c6))
+```
+
+### QQ plot for standardized residuals:
+
+```{r, echo = FALSE}
+library(faraway)
+library(MASS)
+qqnorm(stdres(lm_c6), main="Q-Q plot for standardized residuals")
+abline(0,1)
+```
+
+### Points with large standardized residuals: 
+
+```{r, echo = FALSE}
+cbind(fitted(lm_c6),movie_rt_transform[,c("movie_title","t_gross","t_budget","t_imdb_score","t_rt_score")], studres=studres(lm_c6),stdres=stdres(lm_c6))[abs(stdres(lm_c6))>4,]
+
+```
+
+### Dummy variable for Paranormal Activity: (it is significant; this movie is an outlier).
+
+```{r, echo = FALSE}
+D1 <- rep(0,length=1329)
+names(D1) <- dimnames(movie_rt_transform)[[1]]
+D1[1298] <- 1
+lm2 <- lm(t_gross~.+D1,data=as.data.frame(data_c6))
+summary(lm2) #
+```
+It turns out to be significant; it is an outlier.
+
+Dummy viriable for Winter's Tale: (it is significant; this movie is an outlier).
+```{r, echo = FALSE}
+D2 <- rep(0,length=1329)
+names(D2) <- dimnames(movie_rt_transform)[[1]]
+D2[349] <- 1
+lm3 <- lm(t_gross~.+D2,data=as.data.frame(data_c6))
+summary(lm3)
+```
+It turns out to be significant; it is an outlier.
+
+### Model without influential points and outliers:
+
+```{r, echo = FALSE}
+lm6=lm(t_gross~.,data=as.data.frame(data_c6),subset=(cook<0.015))
+summary(lm6) 
+```
+
+## Censor
+```{r}
+library(censReg)
+
+movie_rt_transform = mdata
+continious_trans1=movie_rt_transform[,-c(1:30)]
+continious_trans1=cbind(continious_trans1,continious_trans1$t_imdb_score^2,movie_rt_transform[,7])
+names(continious_trans1)[5]="t_imdb_score2"
+names(continious_trans1)[6]="year"
+continious_trans1 = rbind(continious_trans1, 0)
+continious_trans1$year = as.factor(continious_trans1$year)
+
+genre_old=movie_rt_transform[,c(9:29)]
+Music= as.numeric(genre_old$Music | genre_old$Musical)
+genre=cbind(genre_old[,-c(13:14)],Music)
+
+c6_1=as.numeric(genre$Comedy|genre$Romance)  #2
+c6_2=as.numeric(genre$Fantasy|genre$Adventure|genre$Animation|genre$Family|genre$Documentary|genre$Music) #6
+c6_3=as.numeric(genre$Sport|genre$War|genre$Biography|genre$History) #5
+c6_4=as.numeric(genre$Western|genre$Crime|genre$Thriller) #3
+c6_5=as.numeric(genre$Action|genre$Sci.Fi) #2
+c6_6=as.numeric(genre$Horror|genre$Mystery)   #2
+c6=cbind(c6_1,c6_2,c6_3,c6_4,c6_5,c6_6)
+c6 = rbind(c6,0)
+
+data_c6=cbind(continious_trans1,c6)
+
+lm_c6=lm(data_c6$t_gross~.,data=as.data.frame(data_c6))
+summary(lm_c6)
+
+clm_s6=censReg(formula = data_c6$t_gross~data_c6$t_budget+data_c6$t_imdb_score+data_c6$t_rt_score+
+                 data_c6$t_imdb_score2+data_c6$year+data_c6$c6_1+data_c6$c6_2+
+                 data_c6$c6_3+data_c6$c6_4+data_c6$c6_5+data_c6$c6_6)
+summary(clm_s6)
+```
+The results for our covariates of interest are very similar.
+
+
+
